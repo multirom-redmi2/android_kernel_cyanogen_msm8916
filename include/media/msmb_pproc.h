@@ -1,9 +1,9 @@
-#ifndef __MSMB_PPROC_H
-#define __MSMB_PPROC_H
-
 #ifdef CONFIG_WINGTECH_CAMERA
 #include <media/msmb_pproc_wingtech.h>
 #else
+
+#ifndef __MSMB_PPROC_H
+#define __MSMB_PPROC_H
 
 #ifdef MSM_CAMERA_BIONIC
 #include <sys/types.h>
@@ -430,6 +430,6 @@ struct msm_camera_v4l2_ioctl32_t {
 };
 #endif
 
-#endif  /* CONFIG_WINGTECH_CAMERA */
-
 #endif /* __MSMB_PPROC_H */
+
+#endif  /* CONFIG_WINGTECH_CAMERA */

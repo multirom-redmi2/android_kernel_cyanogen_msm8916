@@ -1,5 +1,5 @@
-#ifndef __MSMB_PPROC_WINGTECH_H
-#define __MSMB_PPROC_WINGTECH_H
+#ifndef __MSMB_PPROC_H
+#define __MSMB_PPROC_H
 
 #ifdef MSM_CAMERA_BIONIC
 #include <sys/types.h>

@@ -9,8 +9,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#ifndef __MSMB_ISP_WINGTECH__
-#define __MSMB_ISP_WINGTECH__
+#ifndef __MSMB_ISP__
+#define __MSMB_ISP__
 
 #include <linux/videodev2.h>
 
