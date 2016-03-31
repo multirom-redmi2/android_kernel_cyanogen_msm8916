@@ -612,7 +612,7 @@ static int ft5x06_ts_suspend(struct device *dev)
 	int err;
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 #if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE) || defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
-       bool prevent_sleep = false;
+       bool prevent_sleep = false; 
 #endif
 #if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE)
        prevent_sleep = (s2w_switch > 0) && (s2w_s2sonly == 0);
@@ -624,16 +624,13 @@ static int ft5x06_ts_suspend(struct device *dev)
 
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
        if (prevent_sleep) {
-               enable_irq_wake(data->client->irq);
+	       disable_irq_wake(data->client->irq);
 	       if (gpio_is_valid(data->pdata->reset_gpio)) {
 		       txbuf[0] = FT_REG_PMODE;
 		       txbuf[1] = FT_PMODE_MONITOR;
 		       err = ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
-#ifdef SUSPEND_TURNOFF_POWER
-		       gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
-#endif
-		       msleep(data->pdata->hard_rst_dly);
 	       }
+	       //err = data->pdata->power_on(true);
        } else {
 #endif
 
@@ -686,10 +683,10 @@ static int ft5x06_ts_suspend(struct device *dev)
 
 	data->suspended = true;
 
-	return 0;
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	} // if (prevent_sleep)
 #endif
+	return 0;
 
 #ifdef SUSPEND_TURNOFF_POWER
 pwr_off_fail:
@@ -706,9 +703,8 @@ pwr_off_fail:
 static int ft5x06_ts_resume(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
-#ifdef SUSPEND_TURNOFF_POWER
+	char txbuf[2];
 	int err;
-#endif
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 #if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE) || defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
 	bool prevent_sleep = false;
@@ -723,16 +719,13 @@ static int ft5x06_ts_resume(struct device *dev)
 
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	if (prevent_sleep) {
-		disable_irq(data->client->irq);
+		enable_irq_wake(data->client->irq);
 	       if (gpio_is_valid(data->pdata->reset_gpio)) {
 		       txbuf[0] = FT_REG_PMODE;
 		       txbuf[1] = FT_PMODE_ACTIVE;
 		       err = ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
-#ifdef SUSPEND_TURNOFF_POWER
-		       gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
-#endif
-		       msleep(data->pdata->hard_rst_dly);
 	       }
+	       //err = data->pdata->power_on(false);
 	} else {
 #endif
 
@@ -785,10 +778,10 @@ static int ft5x06_ts_resume(struct device *dev)
 
 	data->suspended = false;
 
-	return 0;
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	} // if (prevent_sleep)
 #endif
+	return 0;
 }
 
 static const struct dev_pm_ops ft5x06_ts_pm_ops = {
