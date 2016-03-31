@@ -34,8 +34,6 @@
 #include <linux/fs.h>
 #include <asm/uaccess.h>
 
-#define SUSPEND_TURNOFF_POWER
-
 #if CTP_CHARGER_DETECT
 #include <linux/power_supply.h>
 #endif
@@ -48,6 +46,15 @@
 #include <linux/earlysuspend.h>
 /* Early-suspend level */
 #define FT_SUSPEND_LEVEL 1
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+#include <linux/input/sweep2wake.h>
+#endif
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+#include <linux/input/doubletap2wake.h>
+#endif
 #endif
 
 #if CTP_PROC_INTERFACE
@@ -603,6 +610,32 @@ static int ft5x06_ts_suspend(struct device *dev)
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 	char txbuf[2], i;
 	int err;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE) || defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
+       bool prevent_sleep = false;
+#endif
+#if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE)
+       prevent_sleep = (s2w_switch > 0) && (s2w_s2sonly == 0);
+#endif
+#if defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
+       prevent_sleep = prevent_sleep || (dt2w_switch > 0);
+#endif
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+       if (prevent_sleep) {
+               enable_irq_wake(data->client->irq);
+	       if (gpio_is_valid(data->pdata->reset_gpio)) {
+		       txbuf[0] = FT_REG_PMODE;
+		       txbuf[1] = FT_PMODE_MONITOR;
+		       err = ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
+#ifdef SUSPEND_TURNOFF_POWER
+		       gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
+#endif
+		       msleep(data->pdata->hard_rst_dly);
+	       }
+       } else {
+#endif
 
 	if (data->loading_fw) {
 		dev_info(dev, "Firmware loading in process...\n");
@@ -654,6 +687,9 @@ static int ft5x06_ts_suspend(struct device *dev)
 	data->suspended = true;
 
 	return 0;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	} // if (prevent_sleep)
+#endif
 
 #ifdef SUSPEND_TURNOFF_POWER
 pwr_off_fail:
@@ -672,6 +708,32 @@ static int ft5x06_ts_resume(struct device *dev)
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 #ifdef SUSPEND_TURNOFF_POWER
 	int err;
+#endif
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE) || defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
+	bool prevent_sleep = false;
+#endif
+#if defined(CONFIG_TOUCHSCREEN_SWEEP2WAKE)
+	prevent_sleep = (s2w_switch > 0) && (s2w_s2sonly == 0);
+#endif
+#if defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
+	prevent_sleep = prevent_sleep || (dt2w_switch > 0);
+#endif
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	if (prevent_sleep) {
+		disable_irq(data->client->irq);
+	       if (gpio_is_valid(data->pdata->reset_gpio)) {
+		       txbuf[0] = FT_REG_PMODE;
+		       txbuf[1] = FT_PMODE_ACTIVE;
+		       err = ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
+#ifdef SUSPEND_TURNOFF_POWER
+		       gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
+#endif
+		       msleep(data->pdata->hard_rst_dly);
+	       }
+	} else {
 #endif
 
 	if (!data->suspended) {
@@ -724,6 +786,9 @@ static int ft5x06_ts_resume(struct device *dev)
 	data->suspended = false;
 
 	return 0;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	} // if (prevent_sleep)
+#endif
 }
 
 static const struct dev_pm_ops ft5x06_ts_pm_ops = {
@@ -758,13 +823,20 @@ static int fb_notifier_callback(struct notifier_block *self,
 	if (evdata && evdata->data && event == FB_EVENT_BLANK &&
 		ft5x06_data && ft5x06_data->client) {
 		blank = evdata->data;
-		if (*blank == FB_BLANK_UNBLANK)
-			ft5x06_ts_resume(&ft5x06_data->client->dev);
-		else if (*blank == FB_BLANK_POWERDOWN)
-		ft5x06_ts_suspend(&ft5x06_data->client->dev);
+		switch (*blank) {
+			case FB_BLANK_UNBLANK:
+				ft5x06_ts_resume(&ft5x06_data->client->dev);
+				break;
+			case FB_BLANK_POWERDOWN:
+			case FB_BLANK_HSYNC_SUSPEND:
+			case FB_BLANK_VSYNC_SUSPEND:
+			case FB_BLANK_NORMAL:
+				ft5x06_ts_suspend(&ft5x06_data->client->dev);
+				break;
+		}
 	}
 
-	return 0;
+	return NOTIFY_OK;
 }
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 static void ft5x06_ts_early_suspend(struct early_suspend *handler)
@@ -2716,7 +2788,11 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 
 	err = request_threaded_irq(client->irq, NULL,
 					ft5x06_ts_interrupt,
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+					pdata->irqflags | IRQF_ONESHOT | IRQF_NO_SUSPEND,
+#else
 					pdata->irqflags | IRQF_ONESHOT,
+#endif
 					client->dev.driver->name, data);
 	if (err) {
 		dev_err(&client->dev, "request irq failed\n");
