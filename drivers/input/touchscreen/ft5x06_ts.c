@@ -1183,7 +1183,7 @@ static int ft5x06_ts_suspend(struct device *dev)
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	if (prevent_sleep) {
 		dit_suspend = true;
-		enable_irq_wake(ft5x06->irq);
+		enable_irq_wake(data->client->irq);
 	} else {
 		dit_suspend = false;
 #endif
@@ -1227,6 +1227,7 @@ static int ft5x06_ts_suspend(struct device *dev)
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	} // if (prevent_sleep)
 #endif
+	return 0;
 }
 
 static int ft5x06_ts_resume(struct device *dev)
@@ -1240,7 +1241,7 @@ static int ft5x06_ts_resume(struct device *dev)
 
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	if (prevent_sleep && dit_suspend) {
-		disable_irq_wake(ft5x06->irq);
+		disable_irq_wake(data->client->irq);
 	} else {
 #endif
 
@@ -1292,10 +1293,10 @@ static int ft5x06_ts_resume(struct device *dev)
 		data->suspended = false;
 		data->gesture_pdata->in_pocket = 0;
 	}
-	return 0;
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	} // if (prevent_sleep)
 #endif
+	return 0;
 }
 
 static const struct dev_pm_ops ft5x06_ts_pm_ops = {
