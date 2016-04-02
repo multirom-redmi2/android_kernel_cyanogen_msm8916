@@ -1030,6 +1030,10 @@ static int ft5x06_ts_start(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 	int err;
+	bool prevent_sleep = false;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	ts_get_prevent_sleep(prevent_sleep);
+#endif
 
 	if (data->pdata->power_on) {
 		err = data->pdata->power_on(true);
@@ -1067,7 +1071,12 @@ static int ft5x06_ts_start(struct device *dev)
 
 	msleep(data->pdata->soft_rst_dly);
 
-	enable_irq(data->client->irq);
+	if (prevent_sleep) {
+		disable_irq_wake(data->client->irq);
+	} else {
+		enable_irq(data->client->irq);
+	}
+
 	data->suspended = false;
 
 	return 0;
@@ -1097,7 +1106,18 @@ static int ft5x06_ts_stop(struct device *dev)
 	char txbuf[2];
 	int i, err;
 
-	disable_irq(data->client->irq);
+	bool prevent_sleep = false;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	ts_get_prevent_sleep(prevent_sleep);
+#endif
+
+	if (!prevent_sleep) {
+		disable_irq(data->client->irq);
+		dit_suspend = false;
+	} else {
+		enable_irq_wake(data->client->irq);
+		dit_suspend = true;
+	}
 
 	/* release all touches */
 	for (i = 0; i < data->pdata->num_max_touches; i++) {
@@ -1109,7 +1129,8 @@ static int ft5x06_ts_stop(struct device *dev)
 
 	if (gpio_is_valid(data->pdata->reset_gpio)) {
 		txbuf[0] = FT_REG_PMODE;
-		txbuf[1] = FT_PMODE_HIBERNATE;
+		txbuf[1] = (!prevent_sleep) ? FT_PMODE_HIBERNATE :
+			FT_PMODE_MONITOR;
 		ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
 	}
 
@@ -1175,18 +1196,6 @@ static int ft5x06_ts_suspend(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 	int err;
-#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	bool prevent_sleep = false;
-	ts_get_prevent_sleep(prevent_sleep);
-#endif
-
-#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	if (prevent_sleep) {
-		dit_suspend = true;
-		enable_irq_wake(data->client->irq);
-	} else {
-		dit_suspend = false;
-#endif
 
 	if (data->loading_fw) {
 		dev_info(dev, "Firmware loading in process...\n");
@@ -1224,26 +1233,12 @@ static int ft5x06_ts_suspend(struct device *dev)
 	}
 
 	return ft5x06_ts_stop(dev);
-#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	} // if (prevent_sleep)
-#endif
-	return 0;
 }
 
 static int ft5x06_ts_resume(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 	int err;
-#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	bool prevent_sleep = false;
-	ts_get_prevent_sleep(prevent_sleep);
-#endif
-
-#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	if (prevent_sleep && dit_suspend) {
-		disable_irq_wake(data->client->irq);
-	} else {
-#endif
 
 	if (!data->suspended) {
 		dev_dbg(dev, "Already in awake state\n");
@@ -1293,9 +1288,6 @@ static int ft5x06_ts_resume(struct device *dev)
 		data->suspended = false;
 		data->gesture_pdata->in_pocket = 0;
 	}
-#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	} // if (prevent_sleep)
-#endif
 	return 0;
 }
 
@@ -1332,7 +1324,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 	if (evdata && evdata->data && event == FB_EVENT_BLANK &&
 			ft5x06_data && ft5x06_data->client) {
 		blank = evdata->data;
-		if (*blank == FB_BLANK_UNBLANK || (*blank == FB_BLANK_VSYNC_SUSPEND)) {
+		if (*blank == FB_BLANK_UNBLANK) {
 			if (unblanked_once) {
 				pr_info("ft5x06 resume!\n");
 				ft5x06_ts_resume(&ft5x06_data->client->dev);
